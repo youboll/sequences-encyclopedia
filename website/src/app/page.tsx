@@ -1,22 +1,30 @@
-import Link from "next/link";
 import { getSequences } from "@/lib/api";
+import SearchInput from "@/app/components/SearchInput";
+import SequenceList from "@/app/components/SequenceList";
 
 export const dynamic = "force-dynamic";
 
-export default async function Home() {
-  const sequences = (await getSequences()) ?? [];
+type SearchPage = {
+  searchParams: Promise<{ q?: string }>;
+};
+
+export default async function Home({ searchParams }: SearchPage) {
+  const query: string | null = (await searchParams)?.q ?? null;
+  const result = await getSequences(query);
+
+  if (!result) throw new Error("Failed to fetch sequences");
+  const { sequences, hasMore } = result;
 
   return (
     <main>
       <h1>Sequences Encyclopedia</h1>
-      <ul>
-        {sequences.map((sequence) => (
-          <li key={sequence.id}>
-            <Link href={`/sequences/${sequence.id}`}>{sequence.id}</Link>
-            <span>{sequence.name}</span>
-          </li>
-        ))}
-      </ul>
+      <SearchInput initialValue={query ?? ""} />
+      <SequenceList
+        key={query}
+        query={query ?? ""}
+        initialItems={sequences}
+        hasMore={hasMore}
+      />
     </main>
   );
 }

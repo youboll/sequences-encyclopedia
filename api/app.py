@@ -1,6 +1,8 @@
 import os
 
-from flask import Flask, jsonify
+from flask import Flask
+from flask import jsonify
+from flask import request
 from flask_cors import CORS
 from psycopg import connect
 from psycopg.rows import dict_row
@@ -11,6 +13,7 @@ DATABASE_URL = os.getenv(
     "postgresql://oeis:oeis@localhost:5432/oeis",
 )
 
+PAGE_SIZE = 50
 app = Flask(__name__)
 CORS(app)
 
@@ -42,15 +45,36 @@ def health():
 
 @app.get("/sequences")
 def sequences():
+    q = request.args.get('q')
+    try:
+        page = max(1, int(request.args.get('page', 1)))
+    except (ValueError, TypeError):
+        page = 1
+
+    offset = (page - 1) * PAGE_SIZE
+
+    accepted_fields = ('name', 'keywords', 'oeis_id')
+    filter_statement = ""
+    filter_params = []
+    if q:
+        filter_statement = "WHERE " + " OR ".join([f"""{field} ILIKE %s""" for field in accepted_fields])
+        filter_params = [f"%{q}%" for _ in range(len(accepted_fields))]
+
+    filter_params.extend([PAGE_SIZE + 1, offset])  # Needs to be PAGE_SIZE + 1, so that when it reaches the end, it flags has_more
+
     rows = query(
-        """
+        f"""
         select sequence_number, oeis_id, name, data, keywords, offset_value
         from oeis_sequences
+        {filter_statement}
         order by name
-        limit 200
-        """
+        limit %s OFFSET %s
+        """, filter_params
     )
-    return jsonify([shape(row) for row in rows])
+
+    has_more = len(rows) > PAGE_SIZE
+    rows = rows[:PAGE_SIZE]  # Truncate results to fix the PAGE_SIZE + 1 assert above
+    return jsonify({'sequences': [shape(row) for row in rows], 'hasMore': has_more})
 
 
 @app.get("/sequences/<sequence_id>")
